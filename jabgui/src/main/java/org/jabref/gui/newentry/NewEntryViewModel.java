@@ -33,6 +33,7 @@ import org.jabref.logic.importer.FetcherServerException;
 import org.jabref.logic.importer.IdBasedFetcher;
 import org.jabref.logic.importer.ParseException;
 import org.jabref.logic.importer.WebFetchers;
+import org.jabref.logic.importer.fetcher.GenericUrlBasedFetcher;
 import org.jabref.logic.importer.fileformat.BibtexParser;
 import org.jabref.logic.importer.plaincitation.PlainCitationParser;
 import org.jabref.logic.importer.plaincitation.PlainCitationParserChoice;
@@ -94,6 +95,10 @@ public class NewEntryViewModel {
     private final Map<String, BibEntry> doiCache;
     private BibEntry duplicateEntry;
 
+    private final StringProperty urlText;
+    private final Validator urlTextValidator;
+    private Task<List<BibEntry>> urlWorker;
+
     public NewEntryViewModel(GuiPreferences preferences,
                              LibraryTab libraryTab,
                              DialogService dialogService,
@@ -150,6 +155,12 @@ public class NewEntryViewModel {
                 StringUtil::isNotBlank,
                 ValidationMessage.error(Localization.lang("You must specify a Bib(La)TeX source.")));
         bibtexWorker = null;
+
+        urlText = new SimpleStringProperty();
+        urlTextValidator = new FunctionBasedValidator<>(
+                urlText,
+                StringUtil::isNotBlank,
+                ValidationMessage.error(Localization.lang("You must specify a URL.")));
     }
 
     public void populateDOICache() {
@@ -236,6 +247,14 @@ public class NewEntryViewModel {
 
     public ReadOnlyBooleanProperty bibtexTextValidatorProperty() {
         return bibtexTextValidator.getValidationStatus().validProperty();
+    }
+
+    public StringProperty urlTextProperty() {
+        return urlText;
+    }
+
+    public ReadOnlyBooleanProperty urlTextValidatorProperty() {
+        return urlTextValidator.getValidationStatus().validProperty();
     }
 
     private BibEntry withCoversDownloaded(BibEntry entry) {
@@ -534,6 +553,83 @@ public class NewEntryViewModel {
         taskExecutor.execute(bibtexWorker);
     }
 
+    private class WorkerLookupUrl extends Task<List<BibEntry>> {
+        @Override
+        protected List<BibEntry> call() throws FetcherException {
+            String url = urlText.getValue();
+            if (StringUtil.isBlank(url)) {
+                return List.of();
+            }
+
+            GenericUrlBasedFetcher fetcher = new GenericUrlBasedFetcher();
+            return fetcher.performSearch(url);
+        }
+    }
+
+    public void executeLookupUrl() {
+        executing.setValue(true);
+
+        cancel();
+        urlWorker = new WorkerLookupUrl();
+
+        urlWorker.setOnFailed(_ -> {
+            final Throwable exception = urlWorker.getException();
+            final String exceptionMessage = exception.getMessage();
+
+            final String dialogTitle = Localization.lang("Failed to fetch URL");
+
+            if (exception instanceof FetcherException) {
+                dialogService.showInformationDialogAndWait(
+                        dialogTitle,
+                        Localization.lang(
+                                "Failed to create entries.\n" +
+                                        "The following error was encountered:\n" +
+                                        "%0",
+                                exceptionMessage));
+            } else {
+                dialogService.showInformationDialogAndWait(
+                        dialogTitle,
+                        Localization.lang(
+                                "The following error occurred:\n" +
+                                        "%0",
+                                exceptionMessage));
+            }
+
+            LOGGER.error("An exception occurred when fetching URL.", exception);
+
+            executing.set(false);
+        });
+
+        urlWorker.setOnSucceeded(_ -> {
+            final List<BibEntry> result = urlWorker.getValue();
+
+            if (result.isEmpty()) {
+                dialogService.showWarningDialogAndWait(
+                        Localization.lang("Invalid result"),
+                        Localization.lang(
+                                "An unknown error has occurred."));
+                LOGGER.error("An invalid result was returned when fetching URL entries.");
+                executing.set(false);
+                return;
+            }
+
+            final ImportHandler handler = new ImportHandler(
+                    libraryTab.getBibDatabaseContext(),
+                    preferences,
+                    fileUpdateMonitor,
+                    libraryTab.getUndoManager(),
+                    stateManager,
+                    dialogService,
+                    taskExecutor);
+            handler.importEntriesWithDuplicateCheck(null, result);
+
+            executedSuccessfully.set(true);
+            executing.set(false);
+        });
+
+        taskExecutor.execute(urlWorker);
+    }
+
     public void cancel() {
         if (idLookupWorker != null) {
             idLookupWorker.cancel();
@@ -543,6 +639,9 @@ public class NewEntryViewModel {
         }
         if (bibtexWorker != null) {
             bibtexWorker.cancel();
+        }
+        if (urlWorker != null) {
+            urlWorker.cancel();
         }
     }
 }
