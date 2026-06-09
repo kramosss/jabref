@@ -26,6 +26,7 @@ Note that this project **does not** adhere to [Semantic Versioning](https://semv
 - The `jabkit check` command now runs both the consistency and integrity checks when given an input file without a subcommand (e.g. `jabkit check references.bib`). [#15759](https://github.com/JabRef/jabref/pull/15759)
 - We added OCR feature using OCRmyPDF to extract text from scanned PDFs and create searchable PDFs including the extracted text. [#15712](https://github.com/JabRef/jabref/pull/15712)
 - We added generic CSV export filter that exports all standard BibTeX fields [#15711](https://github.com/JabRef/jabref/issues/15711)
+- We added a "Normalize ISBN" field formatter that converts ISBN-10 identifiers to their ISBN-13 form. [#15924](https://github.com/JabRef/jabref/pull/15924)
 
 ### Changed
 

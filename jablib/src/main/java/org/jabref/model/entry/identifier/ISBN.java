@@ -80,11 +80,36 @@ public class ISBN implements Identifier {
             return false;
         }
 
+        int checkDigit = computeIsbn13CheckDigit(isbnString.substring(0, 12));
+        return checkDigit == (isbnString.charAt(12) - '0');
+    }
+
+    /// Computes the ISBN-13 check digit for the given 12-digit prefix using the standard
+    /// alternating 1/3 weighting.
+    private static int computeIsbn13CheckDigit(String twelveDigits) {
         int sum = 0;
-        for (int pos = 0; pos <= 12; pos++) {
-            sum += (isbnString.charAt(pos) - '0') * ((pos % 2) == 0 ? 1 : 3);
+        for (int pos = 0; pos < 12; pos++) {
+            sum += (twelveDigits.charAt(pos) - '0') * ((pos % 2) == 0 ? 1 : 3);
         }
-        return (sum % 10) == 0;
+        return (10 - (sum % 10)) % 10;
+    }
+
+    /// Returns the ISBN-13 representation of this ISBN.
+    ///
+    /// A valid ISBN-13 is returned unchanged. A valid ISBN-10 is converted by dropping its
+    /// check digit, prefixing the remaining 9 digits with "978", and computing a fresh
+    /// ISBN-13 check digit. An invalid ISBN yields an empty result.
+    public Optional<ISBN> toIsbn13() {
+        if (!isValid()) {
+            return Optional.empty();
+        }
+        if (isIsbn13()) {
+            return Optional.of(this);
+        }
+
+        String core = "978" + isbnString.substring(0, 9);
+        int checkDigit = computeIsbn13CheckDigit(core);
+        return Optional.of(new ISBN(core + checkDigit));
     }
 
     public boolean isValid() {
